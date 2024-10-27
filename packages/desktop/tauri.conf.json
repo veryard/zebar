@@ -34,10 +34,10 @@
       "csp": {
         "default-src": "'self'",
         "style-src": "'self' 'unsafe-inline' *",
-        "script-src": "'self' 'unsafe-eval' asset: http://asset.localhost",
+        "script-src": "'self' 'unsafe-eval' asset: http://asset.localhost cache: http://cache.localhost",
         "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:6123",
         "font-src": "'self' *",
-        "img-src": "'self' asset: http://asset.localhost blob: data: *"
+        "img-src": "'self' asset: http://asset.localhost http://cache.localhost blob: data: *"
       },
       "assetProtocol": {
         "enable": true

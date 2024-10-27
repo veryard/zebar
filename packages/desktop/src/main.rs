@@ -9,7 +9,9 @@ use clap::Parser;
 use cli::MonitorType;
 use config::{MonitorSelection, WidgetPlacement};
 use tauri::{
-  async_runtime::block_on, AppHandle, Emitter, Manager, RunEvent,
+  async_runtime::block_on,
+  http::{self, Response},
+  AppHandle, Emitter, Manager, RunEvent,
 };
 use tokio::task;
 use tracing::{error, info, level_filters::LevelFilter};
@@ -25,6 +27,7 @@ use crate::{
   widget_factory::WidgetFactory,
 };
 
+mod cache_protocol;
 mod cli;
 mod commands;
 mod common;
@@ -33,6 +36,8 @@ mod monitor_state;
 mod providers;
 mod sys_tray;
 mod widget_factory;
+
+use cache_protocol::CacheProtocolHandler;
 
 /// Main entry point for the application.
 ///
@@ -52,6 +57,63 @@ async fn main() -> anyhow::Result<()> {
   tauri::async_runtime::set(tokio::runtime::Handle::current());
 
   let app = tauri::Builder::default()
+    .register_asynchronous_uri_scheme_protocol(
+      "cache",
+      |ctx, request, responder| {
+        let cache_dir = ctx
+          .app_handle()
+          .path()
+          .app_cache_dir()
+          .expect("Failed to get cache directory")
+          .join("protocol-cache");
+        tauri::async_runtime::spawn(async move {
+          let cache_handler = match CacheProtocolHandler::new(cache_dir) {
+            Ok(handler) => handler,
+            Err(e) => {
+              // Respond with an error if initialization fails
+              let response = Response::builder()
+                .status(500)
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Content-Type", "text/plain")
+                .body(
+                  format!("Error initializing cache: {}", e).into_bytes(),
+                )
+                .unwrap();
+              responder.respond(response);
+              return;
+            }
+          };
+
+          let uri =
+            request.uri().to_string().replace("cache://", "https://");
+          match cache_handler.fetch(&uri).await {
+            Ok((content, mime_type)) => {
+              let response = Response::builder()
+                .status(200)
+                .header("Content-Type", mime_type)
+                .header("Access-Control-Allow-Origin", "*")
+                .header(
+                  "Cache-Control",
+                  "public, max-age=86400, immutable",
+                )
+                .body(content)
+                .unwrap();
+
+              responder.respond(response)
+            }
+            Err(e) => {
+              let response = Response::builder()
+                .status(500)
+                .header("Content-Type", "text/plain")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(format!("Error: {}", e).into_bytes())
+                .unwrap();
+              responder.respond(response)
+            }
+          }
+        });
+      },
+    )
     .setup(|app| {
       task::block_in_place(|| {
         block_on(async move {
