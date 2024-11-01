@@ -7,6 +7,7 @@ mod keyboard;
 #[cfg(windows)]
 mod komorebi;
 mod memory;
+mod disk;
 mod network;
 mod provider;
 mod provider_config;
